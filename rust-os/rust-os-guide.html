@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bare Metal Rust — Building an OS, One Boot at a Time</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0b0d0c;
+    --panel: #111413;
+    --panel-2: #14201a;
+    --line: #263029;
+    --text: #e8e6df;
+    --muted: #8a9088;
+    --amber: #ffb454;
+    --green: #7fdc9a;
+    --red: #e8735f;
+  }
+  *{ box-sizing: border-box; }
+  html{ scroll-behavior: smooth; }
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Lora', Georgia, serif;
+    line-height: 1.7;
+    font-size: 17px;
+  }
+  ::selection{ background: var(--amber); color: #1a1200; }
+
+  a{ color: var(--green); text-decoration: none; border-bottom: 1px dotted rgba(127,220,154,0.45); }
+  a:hover{ color: var(--amber); border-bottom-color: var(--amber); }
+
+  code, .mono{
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ---------- layout ---------- */
+  .shell{
+    display:grid;
+    grid-template-columns: 280px 1fr;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  @media (max-width: 860px){
+    .shell{ grid-template-columns: 1fr; }
+    nav.toc{ position: static !important; height:auto !important; border-right:none; border-bottom:1px solid var(--line); }
+  }
+
+  nav.toc{
+    position: sticky;
+    top:0;
+    height:100vh;
+    overflow-y:auto;
+    padding: 28px 18px 40px 24px;
+    border-right: 1px solid var(--line);
+    font-family:'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+  nav.toc .brand{
+    color: var(--amber);
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    margin-bottom: 22px;
+    display:block;
+  }
+  nav.toc .brand .cursor{
+    display:inline-block;
+    width:8px; height:14px;
+    background:var(--amber);
+    margin-left:2px;
+    vertical-align:-2px;
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink{ 50%{ opacity:0; } }
+  nav.toc ol{ list-style:none; margin:0; padding:0; counter-reset: ch; }
+  nav.toc li{ counter-increment: ch; margin-bottom:2px; }
+  nav.toc li a{
+    display:flex; gap:10px;
+    color: var(--muted);
+    border-bottom:none;
+    padding:6px 8px;
+    border-radius:4px;
+  }
+  nav.toc li a:hover, nav.toc li a.active{ color: var(--text); background: var(--panel); }
+  nav.toc li a::before{
+    content: counter(ch, decimal-leading-zero);
+    color: var(--green);
+    opacity:0.8;
+  }
+  nav.toc .divider{ margin: 16px 0; border-top:1px solid var(--line); }
+  nav.toc .sublabel{ color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; font-size:11px; margin: 18px 0 6px 8px; }
+
+  main{ padding: 0 48px 120px 48px; min-width:0; }
+  @media (max-width: 860px){ main{ padding: 0 22px 100px 22px; } }
+
+  /* ---------- hero ---------- */
+  .hero{
+    padding: 90px 0 50px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .boot-log{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: pre-wrap;
+    margin-bottom: 34px;
+    min-height: 110px;
+  }
+  .boot-log .ok{ color: var(--green); }
+  .hero h1{
+    font-family:'JetBrains Mono', monospace;
+    font-size: clamp(28px, 5vw, 46px);
+    line-height:1.15;
+    margin: 0 0 18px 0;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .hero h1 .amber{ color: var(--amber); }
+  .hero p.lede{
+    max-width: 640px;
+    color: var(--muted);
+    font-size: 18px;
+  }
+  .badge-row{ display:flex; flex-wrap:wrap; gap:10px; margin-top:26px; }
+  .badge{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    padding: 5px 10px;
+    border-radius: 3px;
+  }
+
+  /* ---------- chapters ---------- */
+  section.chapter{
+    padding: 56px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  section.chapter:last-of-type{ border-bottom:none; }
+  .chapter-eyebrow{
+    font-family:'JetBrains Mono', monospace;
+    color: var(--green);
+    font-size: 12.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .chapter h2{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 28px;
+    color: var(--text);
+    margin: 0 0 22px 0;
+  }
+  .chapter h3{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 16px;
+    color: var(--amber);
+    margin: 34px 0 12px 0;
+  }
+  .chapter p{ max-width: 720px; }
+  .chapter ul, .chapter ol.steps{ max-width: 720px; padding-left: 22px; }
+  .chapter li{ margin-bottom: 8px; }
+
+  .callout{
+    max-width: 720px;
+    border-left: 3px solid var(--amber);
+    background: var(--panel);
+    padding: 16px 20px;
+    margin: 22px 0;
+    border-radius: 0 4px 4px 0;
+  }
+  .callout .tag{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--amber);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display:block;
+    margin-bottom: 6px;
+  }
+  .callout.tip{ border-left-color: var(--green); }
+  .callout.tip .tag{ color: var(--green); }
+  .callout.warn{ border-left-color: var(--red); }
+  .callout.warn .tag{ color: var(--red); }
+
+  .reading{
+    max-width: 720px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin: 22px 0;
+  }
+  .reading .tag{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display:block;
+    margin-bottom: 8px;
+  }
+  .reading ul{ margin:0; padding-left: 18px; }
+  .reading li{ margin-bottom:6px; }
+
+  .snippet{
+    max-width: 720px;
+    background: #0a0f0c;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 20px 0;
+    font-family:'JetBrains Mono', monospace;
+    font-size: 13.5px;
+    color: var(--muted);
+    overflow-x:auto;
+  }
+  .snippet .shape{ color: var(--green); }
+
+  table.compare{
+    border-collapse: collapse;
+    max-width: 720px;
+    width:100%;
+    font-family:'JetBrains Mono', monospace;
+    font-size: 13px;
+    margin: 20px 0;
+  }
+  table.compare th, table.compare td{
+    border: 1px solid var(--line);
+    padding: 10px 12px;
+    text-align:left;
+    vertical-align:top;
+  }
+  table.compare th{ color: var(--amber); font-weight:500; }
+
+  footer{
+    max-width: 720px;
+    color: var(--muted);
+    font-family:'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    padding: 40px 0 0 0;
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <nav class="toc">
+    <span class="brand">bare_metal_rust<span class="cursor"></span></span>
+    <ol>
+      <li><a href="#preface">Preface — pick your target</a></li>
+      <li><a href="#ch1">Mental model &amp; prerequisites</a></li>
+      <li><a href="#ch2">Toolchain &amp; targets</a></li>
+      <li><a href="#ch3">The freestanding binary</a></li>
+      <li><a href="#ch4">Booting the kernel</a></li>
+      <li><a href="#ch5">VGA text output</a></li>
+      <li><a href="#ch6">CPU exceptions &amp; the GDT</a></li>
+      <li><a href="#ch7">Interrupts &amp; the timer</a></li>
+      <li><a href="#ch8">Keyboard input</a></li>
+      <li><a href="#ch9">Memory I — paging</a></li>
+      <li><a href="#ch10">Memory II — heap</a></li>
+      <li><a href="#ch11">The terminal shell</a></li>
+      <li><a href="#ch12">The game loop</a></li>
+      <li><a href="#ch13">Beyond the terminal</a></li>
+      <li><a href="#ch14">Tips &amp; traps</a></li>
+      <li><a href="#ch15">Reading list</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <div class="hero">
+      <div class="boot-log" id="bootLog"></div>
+      <h1>Bare Metal Rust<br><span class="amber">a book for building your own OS</span></h1>
+      <p class="lede">A chapter-by-chapter route from an empty Cargo project to a kernel that boots real (or virtual) hardware and hands you a playable terminal. No copy-paste kernels — theory, sequencing, and the primary sources, so you write every line yourself.</p>
+      <div class="badge-row">
+        <span class="badge">15 chapters</span>
+        <span class="badge">x86_64 target</span>
+        <span class="badge">QEMU-first, real hardware later</span>
+        <span class="badge">no_std Rust</span>
+      </div>
+    </div>
+
+    <!-- PREFACE -->
+    <section class="chapter" id="preface">
+      <div class="chapter-eyebrow">Preface</div>
+      <h2>Is a terminal game actually the right target?</h2>
+      <p>Short answer: yes, keep it — but let me argue it properly instead of just agreeing with you.</p>
+      <p>An OS project dies from scope, not difficulty. The useful trick is to pick an end goal that forces you through the same core subsystems a "real" OS needs, without dragging in a second whole discipline. A terminal game sitting directly on your kernel needs exactly four things that every teaching OS needs anyway: something on screen, a clock, a keyboard, and memory you control. That's <a href="#ch5">VGA output</a>, <a href="#ch7">the timer interrupt</a>, <a href="#ch8">keyboard interrupts</a>, and <a href="#ch9">paging/heap</a>. You get a satisfying, demoable result the moment those four exist — which is exactly when most solo OS projects lose momentum, so finishing there matters.</p>
+      <p>"Being able to download shit" means a network stack: a NIC driver, an Ethernet/ARP layer, IP, and TCP or UDP, all <em>before</em> you can even resolve a hostname — and that's before touching a filesystem to save what you downloaded. Each of those is roughly its own mini-project, and several depend on hardware quirks (which virtual or real NIC you're targeting) that add debugging pain unrelated to OS theory. It's a fantastic <em>next</em> project, not a better <em>first</em> one.</p>
+      <div class="callout">
+        <span class="tag">Recommendation</span>
+        Ship the terminal game as the v1 milestone (chapters 1–12). Chapter 13 then surveys the next mountains — filesystems, networking, multitasking, a userspace/syscall boundary — so you can pick your v2 goal with open eyes instead of guessing at the effort involved.
+      </div>
+    </section>
+
+    <!-- CH1 -->
+    <section class="chapter" id="ch1">
+      <div class="chapter-eyebrow">Chapter 1</div>
+      <h2>Mental model &amp; prerequisites</h2>
+      <p>Before any code, get the shape of the machine straight in your head. A CPU boots into a legacy 16-bit mode, gets promoted through 32-bit protected mode, and (on x86_64) ends in 64-bit long mode — each stage unlocking capabilities the last one didn't have. Your kernel is just a program the firmware jumps to; there is no libc, no heap, no threads, no <code>std</code> underneath you until you build them yourself.</p>
+      <h3>What you should already know</h3>
+      <ul>
+        <li>Comfortable, non-beginner Rust: ownership, traits, generics, and — importantly — <code>unsafe</code>, because talking to hardware is inherently unsafe.</li>
+        <li>Basic C-level computer architecture: registers, the stack, pointers, endianness.</li>
+        <li>Command-line comfort: you'll be scripting builds, not clicking buttons.</li>
+      </ul>
+      <h3>Concepts to read up on now</h3>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Kernel_(operating_system)" target="_blank">Kernel (operating system)</a> — what a kernel actually owns vs. delegates.</li>
+          <li><a href="https://en.wikipedia.org/wiki/Protection_ring" target="_blank">Protection ring</a> — why "kernel mode" exists at all.</li>
+          <li><a href="https://en.wikipedia.org/wiki/X86-64" target="_blank">x86-64</a> — the architecture you'll target first (widest emulator/tooling support).</li>
+          <li><a href="https://en.wikipedia.org/wiki/Long_mode" target="_blank">Long mode</a> — the 64-bit operating mode your kernel will actually run in.</li>
+        </ul>
+      </div>
+      <div class="callout tip">
+        <span class="tag">Tip</span>
+        Target x86_64 first, not ARM or RISC-V. The tooling, docs, and QEMU support are the deepest, and everything here assumes it.
+      </div>
+
+      <h3>Level up first: from "I know what it is" to "I've used it"</h3>
+      <p>Knowing the definitions of ownership, traits, generics, unsafe, registers, the stack, and endianness isn't the same as having used them — and the OS is a rough place to learn several of them for the first time simultaneously. This is worth a few focused days before chapter 3.</p>
+
+      <div class="callout warn">
+        <span class="tag">Priority 1 — unsafe Rust</span>
+        This is the one that actually gates you: almost all hardware-facing kernel code lives inside <code>unsafe</code> blocks. Reading about it isn't enough; build something with raw pointers so aliasing rules and manual memory ownership stop being theoretical. The classic exercise is working through <em>"Learning Rust With Entirely Too Many Linked Lists"</em> — do at least the first two or three list variants before starting the OS.
+      </div>
+
+      <div class="callout warn">
+        <span class="tag">Priority 2 — bit manipulation</span>
+        Registers, page table entries, the PIC, and the IDT are all "set these 3 bits, clear that one, read this range out." Practice until it's boring: write a function that sets/clears/toggles/reads an arbitrary bit in a <code>u32</code>, hand-build a bitfield struct (a few flags packed into one integer) without a crate, and get comfortable converting small numbers between hex, binary, and decimal in your head.
+      </div>
+
+      <div class="callout warn">
+        <span class="tag">Priority 3 — pointers &amp; endianness, made concrete</span>
+        Do this once, physically: take a <code>u32</code>, call <code>.to_le_bytes()</code> and <code>.to_be_bytes()</code> on it, and work out by hand why the byte orders differ. Then cast a raw pointer to a different type and read through it — e.g. walk a <code>*const u32</code> one byte at a time via a <code>*const u8</code>. That single exercise demystifies most of what's confusing about memory-mapped registers later.
+      </div>
+
+      <div class="callout">
+        <span class="tag">Priority 4 — stack &amp; registers, just enough</span>
+        You don't need assembly fluency, but you should recognize a stack frame, a return address, and a calling convention concretely, not abstractly. If you want one source, the chapter on machine-level program representation in <em>Computer Systems: A Programmer's Perspective</em> (CS:APP) is the standard reference and covers x86 registers and the stack directly — you only need that one chapter, not the whole book.
+      </div>
+
+      <div class="callout">
+        <span class="tag">Priority 5 — traits &amp; generics, one real rep</span>
+        You're closest here already. Implement a trait yourself instead of just using one — give a custom struct a <code>Display</code> impl, or write your own trait with a default method, plus one generic function with a trait bound. That's genuinely enough; Chapter 5's <code>core::fmt::Write</code> implementation will feel familiar instead of new.
+      </div>
+
+      <div class="reading">
+        <span class="tag">Background reading &amp; exercises</span>
+        <ul>
+          <li><a href="https://rust-unofficial.github.io/too-many-lists/" target="_blank">Learning Rust With Entirely Too Many Linked Lists</a> — the standard hands-on route into raw pointers and unsafe.</li>
+          <li><a href="https://doc.rust-lang.org/nomicon/" target="_blank">The Rustonomicon</a> — pair with the exercise above rather than reading it cold.</li>
+          <li><a href="https://en.wikipedia.org/wiki/Endianness" target="_blank">Endianness</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Bit_field" target="_blank">Bit field</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Call_stack" target="_blank">Call stack</a> and <a href="https://en.wikipedia.org/wiki/Calling_convention" target="_blank">calling convention</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Processor_register" target="_blank">Processor register</a></li>
+          <li><em>Computer Systems: A Programmer's Perspective</em> — the "machine-level representation of programs" chapter specifically, for stack/register grounding.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- CH2 -->
+    <section class="chapter" id="ch2">
+      <div class="chapter-eyebrow">Chapter 2</div>
+      <h2>Toolchain &amp; targets</h2>
+      <p>Your kernel isn't compiled "for your computer" the normal way — it's cross-compiled for a bare <em>target triple</em> with no operating system underneath it at all. Rust's nightly channel is required here because the features that make this possible (custom targets, certain build-std flags) aren't stabilized.</p>
+      <p>You'll define your own target specification describing the CPU, the calling convention, and — critically — that there is no OS to link against. You'll also need <code>rust-src</code> so Cargo can rebuild Rust's own <code>core</code> library for that custom target, since the prebuilt one assumes a host OS exists.</p>
+      <h3>Decisions to make in this chapter</h3>
+      <ol class="steps">
+        <li>Install and pin a nightly toolchain for this project specifically, not globally.</li>
+        <li>Decide on a custom JSON target spec vs. one of Rust's built-in bare-metal targets — research both before choosing.</li>
+        <li>Set up a build script or Cargo config so a plain <code>cargo build</code> "just works" for contributors (including future-you).</li>
+      </ol>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://doc.rust-lang.org/rustc/targets/custom.html" target="_blank">rustc: custom targets</a></li>
+          <li><a href="https://doc.rust-lang.org/cargo/reference/unstable.html#build-std" target="_blank">Cargo unstable: build-std</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Cross_compiler" target="_blank">Cross compiler</a></li>
+        </ul>
+      </div>
+      <div class="callout warn">
+        <span class="tag">Trap</span>
+        Nightly Rust moves fast; a target-spec field that works today may be renamed next month. Pin an exact nightly date in <code>rust-toolchain.toml</code> so your build doesn't randomly break.
+      </div>
+    </section>
+
+    <!-- CH3 -->
+    <section class="chapter" id="ch3">
+      <div class="chapter-eyebrow">Chapter 3</div>
+      <h2>The freestanding binary</h2>
+      <p>A normal Rust binary quietly depends on an OS to set up its stack, hand it argv, and catch its panics. Stripping that away is the actual meaning of "freestanding": no standard library, no runtime, no entry point handed to you by the OS loader. You provide the entry point, and you provide the panic behavior, because there's no OS underneath to provide either.</p>
+      <h3>What "freestanding" removes, concretely</h3>
+      <ul>
+        <li>The standard library — you're left with <code>core</code> (and later, hand-rolled <code>alloc</code> support once you have a heap).</li>
+        <li>The normal <code>main</code> entry point and the C runtime that calls it.</li>
+        <li>Unwinding-based panics — you'll choose an abort strategy instead.</li>
+        <li>Anything that assumes a filesystem, threads, or process model exists.</li>
+      </ul>
+      <p>This is also where you'll write your first genuinely OS-flavored piece of code: a panic handler. It doesn't need to do much yet — print something and halt — but every kernel has one, because <code>core</code> requires it by contract.</p>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Embedded_system#Software_architectures" target="_blank">Freestanding / embedded software model</a></li>
+          <li><a href="https://doc.rust-lang.org/nomicon/" target="_blank">The Rustonomicon</a> — your reference for everything <code>unsafe</code> from here on.</li>
+          <li><a href="https://doc.rust-lang.org/reference/items/entry-point.html" target="_blank">Rust reference: the entry point</a></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- CH4 -->
+    <section class="chapter" id="ch4">
+      <div class="chapter-eyebrow">Chapter 4</div>
+      <h2>Booting the kernel</h2>
+      <p>Firmware doesn't know your kernel exists; it looks for a bootable disk, loads a small program, and jumps to it. That program — the bootloader — is responsible for getting the CPU from its ancient legacy startup mode into a mode your Rust code can actually run in, and for handing your kernel some basic information about the machine (memory map, framebuffer, etc.).</p>
+      <p>You have a real decision here: write your own minimal bootloader (excellent for understanding BIOS/UEFI handoff, real-mode-to-long-mode transitions, and the Multiboot-style boot protocols) or use an existing Rust bootloader crate and focus your effort on the kernel itself. Neither is "cheating" — they teach different things.</p>
+      <table class="compare">
+        <tr><th>Approach</th><th>You learn</th><th>Cost</th></tr>
+        <tr><td>Own bootloader</td><td>Real→protected→long mode transitions, GDT setup, disk/firmware handoff</td><td>Slow start, more assembly-adjacent work</td></tr>
+        <tr><td>Bootloader crate + Multiboot</td><td>Kernel design, gets to interrupts/memory faster</td><td>Less firmware-level understanding</td></tr>
+      </table>
+      <div class="callout tip">
+        <span class="tag">Tip</span>
+        If your priority is the terminal game, use an existing bootloader and spend your learning budget on chapters 6–12. Come back and write your own bootloader as a dedicated side quest later — it's a great standalone project.
+      </div>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/BIOS" target="_blank">BIOS</a> and <a href="https://en.wikipedia.org/wiki/Unified_Extensible_Firmware_Interface" target="_blank">UEFI</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Multiboot_Specification" target="_blank">Multiboot Specification</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Booting" target="_blank">Booting</a> — the general sequence, OS-agnostic</li>
+          <li><a href="https://wiki.osdev.org/Main_Page" target="_blank">OSDev Wiki</a> — the single best community reference for every step in this chapter</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- CH5 -->
+    <section class="chapter" id="ch5">
+      <div class="chapter-eyebrow">Chapter 5</div>
+      <h2>VGA text output — your first "hello"</h2>
+      <p>Long before you have a windowing system, you have a rectangle of characters mapped directly into memory: write a byte to the right address and a character appears on screen. This is the VGA text buffer — a legacy but wonderfully simple way to get your first visible proof of life, and it's exactly the display mode your terminal game will render into.</p>
+      <p>The interesting design work here is wrapping that raw memory-mapped buffer safely: tracking a cursor position, handling scrolling when the screen fills, and exposing something that feels like <code>print!</code>/<code>println!</code> to the rest of your kernel via Rust's <code>core::fmt::Write</code> trait.</p>
+      <div class="snippet"><span class="shape">// shape, not implementation — the trait you're aiming to satisfy
+impl core::fmt::Write for Writer {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result { ... }
+}</span></div>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/VGA_text_mode" target="_blank">VGA text mode</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Memory-mapped_I/O" target="_blank">Memory-mapped I/O</a></li>
+          <li><a href="https://doc.rust-lang.org/core/fmt/trait.Write.html" target="_blank"><code>core::fmt::Write</code></a></li>
+        </ul>
+      </div>
+      <div class="callout warn">
+        <span class="tag">Trap</span>
+        Writes to the VGA buffer are volatile — the compiler doesn't know a memory-mapped device is watching, so it's free to reorder or eliminate writes it thinks are "dead." Look into volatile access before you spend an hour debugging text that mysteriously doesn't appear.
+      </div>
+    </section>
+
+    <!-- CH6 -->
+    <section class="chapter" id="ch6">
+      <div class="chapter-eyebrow">Chapter 6</div>
+      <h2>CPU exceptions &amp; the GDT</h2>
+      <p>Before you can safely handle interrupts, you need two pieces of CPU bookkeeping in place. The <strong>Global Descriptor Table</strong> describes memory segments and privilege levels to the CPU — mostly a legacy holdover in long mode, but you still need a minimal one, plus a separate stack (via the Interrupt Stack Table) reserved for catastrophic faults so a stack overflow doesn't corrupt itself while trying to report a stack overflow.</p>
+      <p>Then come CPU exceptions: faults the processor raises itself — divide-by-zero, invalid opcode, page fault, the infamous double fault. Handling these correctly, especially the double fault, is what turns "kernel triple-faults and the VM silently reboots" into "kernel prints a readable panic and halts," which will save you enormous debugging time in every later chapter.</p>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Global_Descriptor_Table" target="_blank">Global Descriptor Table</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Interrupt_descriptor_table" target="_blank">Interrupt Descriptor Table</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Double_fault" target="_blank">Double fault</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Page_fault" target="_blank">Page fault</a></li>
+        </ul>
+      </div>
+      <div class="callout tip">
+        <span class="tag">Tip</span>
+        Get double-fault handling and a dedicated fault stack working <em>before</em> you write any interrupt handlers. It's the difference between a stack trace and a silent QEMU reboot loop.
+      </div>
+    </section>
+
+    <!-- CH7 -->
+    <section class="chapter" id="ch7">
+      <div class="chapter-eyebrow">Chapter 7</div>
+      <h2>Interrupts &amp; the timer</h2>
+      <p>Hardware interrupts are how the outside world — a timer chip ticking, a key being pressed — gets the CPU's attention without you polling in a busy loop. You'll configure the legacy Programmable Interrupt Controller (or the more modern APIC) to route these signals to entries in your IDT, and you'll need to explicitly tell the controller "I've handled this one" at the end of each handler, or it will stop delivering further interrupts.</p>
+      <p>The timer interrupt in particular is worth building carefully: it's your kernel's heartbeat. Every "tick"-based thing later — task switching, the game's frame timing, anything time-based — hangs off this single interrupt firing at a steady rate.</p>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Interrupt" target="_blank">Interrupt</a> (general concept)</li>
+          <li><a href="https://en.wikipedia.org/wiki/Programmable_interrupt_controller" target="_blank">Programmable Interrupt Controller (PIC)</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Advanced_Programmable_Interrupt_Controller" target="_blank">Advanced PIC (APIC)</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Programmable_interval_timer" target="_blank">Programmable Interval Timer</a></li>
+        </ul>
+      </div>
+      <div class="callout warn">
+        <span class="tag">Trap</span>
+        Forgetting to remap the legacy PIC moves its interrupt numbers so they collide with CPU exception numbers — a keyboard press can look identical to a CPU fault to your handler table. This bites almost everyone once.
+      </div>
+    </section>
+
+    <!-- CH8 -->
+    <section class="chapter" id="ch8">
+      <div class="chapter-eyebrow">Chapter 8</div>
+      <h2>Keyboard input</h2>
+      <p>With interrupts working, the keyboard is "just" another interrupt source, but a fiddly one: the controller hands you raw scancodes, not characters, and depending on the scancode set you may get one byte per key or a short multi-byte sequence for special keys. You'll build a small state machine to turn scancodes into logical key events, then a layer on top to turn key-down events into actual characters (accounting for shift, at minimum).</p>
+      <p>This is also your first real lesson in interrupt-safe data sharing: the interrupt handler fires asynchronously and needs to hand key events to the rest of your kernel without a heap, without threads, and without deadlocking against itself.</p>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Scancode" target="_blank">Scancode</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/PS/2_port" target="_blank">PS/2 port</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Ring_buffer" target="_blank">Ring buffer</a> — a natural fit for an interrupt-fed input queue</li>
+        </ul>
+      </div>
+      <div class="callout tip">
+        <span class="tag">Tip</span>
+        Keep the interrupt handler itself tiny — decode just enough to push a raw event into a queue, and do all the interesting logic (key-to-character mapping, game input handling) outside the interrupt context. Long-running interrupt handlers cause missed or delayed interrupts elsewhere.
+      </div>
+    </section>
+
+    <!-- CH9 -->
+    <section class="chapter" id="ch9">
+      <div class="chapter-eyebrow">Chapter 9</div>
+      <h2>Memory I — paging &amp; virtual memory</h2>
+      <p>Every address your kernel touches so far has been a physical address by luck, not by design. Real memory management means virtual memory: the CPU translates every address through page tables before touching physical RAM, which is what makes memory protection, and later, per-process isolation, possible at all.</p>
+      <p>Your bootloader (chapter 4) likely already set up an initial page table to get you into long mode; this chapter is about understanding that structure well enough to walk it, map new pages deliberately, and eventually manage physical frames yourself instead of relying entirely on what the bootloader handed you.</p>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Memory_paging" target="_blank">Memory paging</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Virtual_memory" target="_blank">Virtual memory</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Page_table" target="_blank">Page table</a> (multi-level structure on x86_64)</li>
+          <li><a href="https://en.wikipedia.org/wiki/Translation_lookaside_buffer" target="_blank">Translation lookaside buffer</a> — why you must flush it after remapping</li>
+        </ul>
+      </div>
+      <div class="callout warn">
+        <span class="tag">Trap</span>
+        Page faults after a mapping change are almost always a forgotten TLB flush, not a logic bug in the mapping code itself. Rule that out first.
+      </div>
+    </section>
+
+    <!-- CH10 -->
+    <section class="chapter" id="ch10">
+      <div class="chapter-eyebrow">Chapter 10</div>
+      <h2>Memory II — the heap</h2>
+      <p>With paging understood, you can carve out a fixed region of virtual memory and back it with real frames, then install an allocator over that region so <code>alloc::vec::Vec</code>, <code>String</code>, and friends become usable — a genuinely nice milestone, since a huge amount of "normal" Rust suddenly works again.</p>
+      <p>The interesting design decision is which allocator strategy to implement: a simple bump allocator (fast, can't reclaim individual frees), a linked-list free-list allocator (reclaims memory, more bookkeeping), or a fixed-size-block allocator (fast reclaiming for common small sizes). Each is a legitimate, well-documented tradeoff — pick based on what you want to learn, not on which is "best."</p>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Memory_management" target="_blank">Memory management</a> (general strategies)</li>
+          <li><a href="https://en.wikipedia.org/wiki/Free_list" target="_blank">Free list</a></li>
+          <li><a href="https://doc.rust-lang.org/alloc/index.html" target="_blank"><code>alloc</code> crate docs</a> — what unlocks once your allocator exists</li>
+          <li><a href="https://doc.rust-lang.org/std/alloc/trait.GlobalAlloc.html" target="_blank"><code>GlobalAlloc</code> trait</a> — the interface your allocator must implement</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- CH11 -->
+    <section class="chapter" id="ch11">
+      <div class="chapter-eyebrow">Chapter 11</div>
+      <h2>The terminal shell</h2>
+      <p>This is where the pieces from chapters 5–10 assemble into something that feels like an OS instead of a pile of subsystems: a loop that reads keyboard events, echoes characters to the VGA buffer with a blinking cursor, supports backspace and a scrolling history, and dispatches a typed line to a command handler.</p>
+      <p>Treat this like designing a tiny language: a command is a name plus arguments, parsed from one line of text, dispatched to a Rust function. Build a couple of trivial commands first (echo, clear, help) to prove the loop, before your game becomes just another command this shell can launch.</p>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Shell_(computing)" target="_blank">Shell (computing)</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop" target="_blank">Read–eval–print loop</a> — the general pattern your shell follows</li>
+          <li><a href="https://en.wikipedia.org/wiki/Command-line_interface" target="_blank">Command-line interface</a></li>
+        </ul>
+      </div>
+      <div class="callout tip">
+        <span class="tag">Tip</span>
+        Design commands as a trait or a function-pointer table from day one, even with only two commands. Retrofitting a dispatch system once you have a shell full of copy-pasted <code>if</code> chains is a chore you can skip entirely.
+      </div>
+    </section>
+
+    <!-- CH12 -->
+    <section class="chapter" id="ch12">
+      <div class="chapter-eyebrow">Chapter 12</div>
+      <h2>Turning it into a game</h2>
+      <p>A game loop needs three things your kernel now has: a way to draw, a way to read input, and a way to measure time — the timer interrupt from chapter 7. Rather than a busy-spin loop, drive updates off your timer tick count so the game's speed doesn't depend on how fast the underlying hardware happens to run.</p>
+      <p>Two OS-specific wrinkles worth planning for: you have no OS-provided randomness source, so you'll need a small pseudo-random number generator seeded from something that varies (the timer tick count at boot is a common, if weak, choice); and you have no double-buffered framebuffer in text mode, so redraw carefully — clear-and-redraw-every-frame will visibly flicker, while only overwriting changed cells will not.</p>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Video_game_programming#Game_loop" target="_blank">Game loop</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Pseudorandom_number_generator" target="_blank">Pseudorandom number generator</a> — look at simple ones like xorshift or an LCG, not cryptographic ones</li>
+          <li><a href="https://en.wikipedia.org/wiki/Multiple_buffering" target="_blank">Multiple buffering</a> — the general idea behind flicker-free redraws</li>
+        </ul>
+      </div>
+      <div class="callout tip">
+        <span class="tag">Tip</span>
+        Snake, a maze-runner, or a falling-blocks game are the classic choices here for good reason: fixed-size grid, discrete tick-based movement, tiny state. All three map cleanly onto "redraw only the changed cells" without needing real graphics.
+      </div>
+    </section>
+
+    <!-- CH13 -->
+    <section class="chapter" id="ch13">
+      <div class="chapter-eyebrow">Chapter 13</div>
+      <h2>Beyond the terminal — where the next mountains are</h2>
+      <p>Once the game runs, you've built the load-bearing parts of a real kernel: boot, interrupts, memory, and a basic run loop. Everything past this point is optional, and each item below is genuinely its own project — pick the one that matches what you want to learn next, rather than trying to do all of them at once.</p>
+      <table class="compare">
+        <tr><th>Direction</th><th>What it adds</th><th>Roughly how big</th></tr>
+        <tr><td>Multitasking</td><td>A scheduler, context switching, cooperative or preemptive tasks</td><td>Medium — mostly builds on what you already have</td></tr>
+        <tr><td>Filesystem</td><td>A disk driver, a filesystem format (even a toy one), persistent storage</td><td>Medium–large — new hardware layer (disk I/O)</td></tr>
+        <tr><td>Networking ("download shit")</td><td>NIC driver, Ethernet/ARP, IP, TCP/UDP, possibly DNS</td><td>Large — several independent layers, hardware-specific driver work</td></tr>
+        <tr><td>Userspace</td><td>Ring 3 execution, syscalls, process isolation</td><td>Large — security-sensitive, easy to get subtly wrong</td></tr>
+      </table>
+      <div class="reading">
+        <span class="tag">Background reading</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Scheduling_(computing)" target="_blank">Scheduling (computing)</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/File_system" target="_blank">File system</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/Network_interface_controller" target="_blank">Network interface controller</a> and <a href="https://en.wikipedia.org/wiki/Internet_protocol_suite" target="_blank">Internet protocol suite</a></li>
+          <li><a href="https://en.wikipedia.org/wiki/System_call" target="_blank">System call</a></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- CH14 -->
+    <section class="chapter" id="ch14">
+      <div class="chapter-eyebrow">Chapter 14</div>
+      <h2>Tips &amp; traps, collected</h2>
+      <ul>
+        <li><strong>QEMU first, real hardware second.</strong> A crash in QEMU gives you logs and a debugger; a crash on real hardware gives you a black screen. Only test on real metal once things are stable.</li>
+        <li><strong>Build a serial-port logger early.</strong> Once VGA text is up, redirect debug output to the serial port too — QEMU can pipe that straight to your terminal, which is far easier to read than screenshots of a VM window.</li>
+        <li><strong>Triple faults are usually "handler chain not set up yet," not exotic bugs.</strong> If QEMU silently reboots, suspect a missing or misconfigured IDT/GDT entry before anything else.</li>
+        <li><strong>Commit at every working milestone.</strong> Kernel bugs can corrupt state in ways that are hard to bisect; a granular git history is more valuable here than in ordinary application code.</li>
+        <li><strong>Read a real kernel's source once you're past chapter 8.</strong> Doing so earlier is overwhelming; doing so later helps you recognize why a design decision you made works or doesn't.</li>
+        <li><strong>Keep interrupt handlers short and non-blocking.</strong> Anything slow belongs in code the handler merely triggers, not in the handler itself.</li>
+        <li><strong>Expect the double fault handler to save you constantly.</strong> Don't treat chapter 6 as optional groundwork — it's the tool you'll use to debug every later chapter.</li>
+      </ul>
+    </section>
+
+    <!-- CH15 -->
+    <section class="chapter" id="ch15">
+      <div class="chapter-eyebrow">Chapter 15</div>
+      <h2>Reading list</h2>
+      <p>Two resources anchor almost everything above. Everything else supplements them.</p>
+      <div class="reading">
+        <span class="tag">The two anchors</span>
+        <ul>
+          <li><a href="https://os.phil-opp.com/" target="_blank">Writing an OS in Rust</a> — Philipp Oppermann's blog series is the closest thing to "the Rust book, but for this project." It walks the same arc as this guide (freestanding binaries through paging and a heap) with working code you should attempt yourself first.</li>
+          <li><a href="https://wiki.osdev.org/Main_Page" target="_blank">OSDev Wiki</a> — the community reference for every hardware detail (PIC remapping quirks, ACPI, disk controllers, and far more) once you're past the Rust-specific parts.</li>
+        </ul>
+      </div>
+      <div class="reading">
+        <span class="tag">Rust-specific references</span>
+        <ul>
+          <li><a href="https://doc.rust-lang.org/book/" target="_blank">The Rust Programming Language</a> — if any chapter above assumed Rust knowledge you don't have yet.</li>
+          <li><a href="https://doc.rust-lang.org/nomicon/" target="_blank">The Rustonomicon</a> — unsafe Rust, in depth.</li>
+          <li><a href="https://docs.rust-embedded.org/book/" target="_blank">The Embedded Rust Book</a> — different hardware target, but the no_std mindset transfers directly.</li>
+        </ul>
+      </div>
+      <div class="reading">
+        <span class="tag">General OS theory, for when you want the "why"</span>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Operating_system" target="_blank">Operating system</a> — the overview article, worth a slow read once, not skimming.</li>
+          <li><a href="https://en.wikipedia.org/wiki/Category:Operating_system_kernels" target="_blank">Category: Operating system kernels</a> on Wikipedia — a jumping-off point into specific kernel designs (monolithic, microkernel, hybrid) for when you're deciding your own kernel's shape.</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer>
+      built one interrupt at a time — good luck, and don't skip the double fault handler.
+    </footer>
+
+  </main>
+</div>
+
+<script>
+  const lines = [
+    "SeaBIOS (version 1.16.0-debian-1.16.0-1)",
+    "Booting from ROM...",
+    "loading kernel.bin ...",
+    "entering long mode  [ " ,
+    "mapping VGA text buffer  [ ",
+    "installing GDT + IDT  [ ",
+    "PIC remapped, timer armed  [ ",
+    "keyboard controller online  [ ",
+    "heap initialized (16 KiB)  [ ",
+    "> terminal ready_"
+  ];
+  const el = document.getElementById('bootLog');
+  let out = "";
+  let i = 0;
+  function typeLine(){
+    if(i >= lines.length){ return; }
+    let line = lines[i];
+    let okSuffix = "";
+    if(line.endsWith("[ ")){ okSuffix = "OK ]"; }
+    let full = line + okSuffix;
+    let j = 0;
+    const iv = setInterval(()=>{
+      if(j <= full.length){
+        let shown = out + full.slice(0, j);
+        el.innerHTML = shown.replace(/OK \]/g, '<span class="ok">OK ]</span>');
+        j++;
+      } else {
+        clearInterval(iv);
+        out += full + "\n";
+        i++;
+        setTimeout(typeLine, 90);
+      }
+    }, 10);
+  }
+  typeLine();
+
+  // active TOC highlight
+  const sections = document.querySelectorAll('section.chapter, .hero');
+  const links = document.querySelectorAll('nav.toc a');
+  const map = {};
+  links.forEach(l => map[l.getAttribute('href').slice(1)] = l);
+  const obs = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      const link = map[e.target.id];
+      if(!link) return;
+      if(e.isIntersecting){
+        links.forEach(l=>l.classList.remove('active'));
+        link.classList.add('active');
+      }
+    });
+  }, { rootMargin: "-10% 0px -70% 0px" });
+  document.querySelectorAll('section.chapter[id]').forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>
